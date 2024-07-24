@@ -1,0 +1,210 @@
+---
+title: "TS8_New_New"
+author: "Ben Gottesman"
+date: "2024-07-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r setup, include=FALSE}
+# Load necessary libraries
+library(tidyverse)
+library(caret)
+library(randomForest)
+```
+
+## Set the working directory
+
+Change the path below to the path that contains the selection table.
+
+```{r set working directory}
+setwd('/Users/blg85/Documents/Cornell/TS8') # Modify this to your path
+dir() # the dir() function enables us to see what is in the working directory. Check that the selection table .txt file is listed here. If it is not, revise your path. 
+
+```
+
+## Read Selection Table
+
+Here we will read the Raven selection table into the R environment using the read.table() function.
+
+```{r read selection table}
+owl.df <- read.table('Owl_Selection_Table.selections.txt',,header=T,sep='\t',check.names=FALSE)
+```
+
+# Obtain basic information about the selection table
+
+Look at the first ten rows of the dataframe using the head() function
+
+```{r}
+
+# Look at the first ten rows of the dataframe with the head() function
+head(owl.df)
+
+```
+
+```{r}
+
+# View the dimensions of this dataframe. How many rows and columns?
+dim(owl.df) # the first dimension refers to the rows, the second refers to the columns
+
+```
+
+```{r}
+
+# View the number of examples for each owl species 
+number_of_examples <- owl.df %>%
+  count(Species)
+
+```
+
+# Basic information about the selection table
+
+```{r}
+
+# Convert "species" column to variable type "factor"
+owl.df$Species <- factor(owl.df$Species)
+
+```
+
+## Information about the measurements
+
+Let's get some basic information about our selections
+
+```{r}
+boxplot(owl.df$`Dur 50% (s)`~owl.df$Species)
+```
+
+## Visualize differences in measurements between groups
+
+```{r}
+
+# List of columns to create density plots for
+columns_to_plot <- c("Avg Entropy (bits)", "BW 50% (Hz)", "BW 90% (Hz)", "Delta Time (s)", 
+                     "Dur 50% (s)", "Dur 90% (s)", "Freq 25% (Hz)", "Freq 5% (Hz)", 
+                     "Freq 75% (Hz)", "Freq 95% (Hz)", "Peak Freq (Hz)", 
+                     "PFC Avg Slope (Hz/ms)", "PFC Max Freq (Hz)", "PFC Max Slope (Hz/ms)",
+                     "PFC Min Freq (Hz)", "PFC Min Slope (Hz/ms)", "PFC Num Inf Pts")
+
+# Convert the dataframe from wide format to long format
+# This allows us to have a single column for acoustic measurement values and another for measurement types
+owl.df_long <- owl.df %>%
+  # Select only the columns of interest: Species, and the acoustic measurements
+  select(Species, all_of(columns_to_plot)) %>%
+  # Pivot the dataframe to long format
+  pivot_longer(cols = -c(Species), names_to = "Measurement", values_to = "Value")
+
+# Create the multipanel density plot
+ggplot(owl.df_long, aes(x = Value, fill = Species)) +
+  # Add density plots with alpha blending for transparency
+  geom_density(alpha = 0.5) +
+  # Create a separate panel for each measurement type
+  facet_wrap(~ Measurement, scales = "free") +
+  # Add labels and a title
+  labs(title = "Density Plots of Acoustic Measurements by Species",
+       x = "Value",
+       y = "Density") +
+  # Apply a minimal theme for a clean look
+  theme_minimal()
+
+
+```
+
+Split the annotated dataset into training and testing datasets. Remember, it is important that any data used in the test set is *not* used in training.
+
+```{r}
+
+# Create a stratified split
+set.seed(123)  # For reproducibility
+trainIndex <- createDataPartition(owl.df$Species, p = 0.7, list = FALSE) # Here, p refers to the percentage of the dataset that will be used for training. So, p = 0.7 means that 70% of the examples will be used to train the model and 30% will be used to test the model. 
+
+# Split the data into training and testing sets
+owl.df.train <- owl.df[trainIndex, ]
+owl.df.test <- owl.df[-trainIndex, ]
+
+# Choose which acoustic measurements (features) you want to include to train your model
+colnames(owl.df)
+selected.features <- c(14,15) # replace with the column numbers of your choosing
+
+# Check that predictor variables are numeric or logical
+predictor_columns <- selected.features # Specify the correct columns for predictors
+predictors_train <- owl.df.train[, predictor_columns]
+predictors_test <- owl.df.test[, predictor_columns]
+
+# Convert predictors to numeric if necessary
+predictors_train <- data.frame(lapply(predictors_train, as.numeric))
+predictors_test <- data.frame(lapply(predictors_test, as.numeric))
+```
+
+```{r}
+
+# Check the distribution in training and testing sets
+print('Training Dataset')
+table(owl.df.train$Species)
+
+print('Test Dataset')
+table(owl.df.test$Species)
+```
+
+# Train a Random Forest model
+
+```{r}
+
+# Train the random forest model
+ml.model.rf <- randomForest::randomForest(x = predictors_train, y = owl.df.train$Species)
+
+```
+
+# View the Results
+
+```{r}
+
+# View the random forest model
+ml.model.rf 
+
+```
+
+# Test the Random Forest model on the test dataset
+
+```{r}
+# Make predictions using the trained model
+new_predictions <- predict(ml.model.rf, predictors_test)
+
+# Add predictions to the new data and save it
+owl.df.test$Predicted_Species <- new_predictions
+
+# Combine actual and predicted values
+results <- data.frame(
+  Actual = owl.df.test$Species,
+  Predicted = new_predictions
+)
+
+```
+
+# Visualize the performance of the model on test data
+
+```{r}
+# Create a confusion matrix
+confusionMatrix <- confusionMatrix(results$Predicted, results$Actual)
+
+# Visualize the results
+# Create a confusion matrix plot
+confusion_matrix_plot <- as.data.frame(table(results))
+ggplot(confusion_matrix_plot, aes(x = Actual, y = Predicted)) +
+  geom_tile(aes(fill = Freq), color = "white") +
+  scale_fill_gradient(low = "white", high = "steelblue") +
+  geom_text(aes(label = Freq), vjust = 1) +
+  labs(title = "Confusion Matrix", x = "Actual Species", y = "Predicted Species") +
+  theme_minimal()
+
+```
+
+# To add:
+
+# Explanation of confusion matrix
+
+# Calculate the proportion correct (precision) by adding up the number of correctly identified calls and dividing by the total number of calls.
+
+# Next steps: Change the features included in the model. What is the best performance you can achieve?
