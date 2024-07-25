@@ -10,28 +10,52 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r setup, include=FALSE}
-# Load necessary libraries
+# Install and load necessary libraries
+
+# Check and install tidyverse if not already installed
+if (!require(tidyverse)) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+
+# Check and install caret if not already installed
+if (!require(caret)) {
+  install.packages("caret")
+  library(caret)
+}
+
+# Check and install randomForest if not already installed
+if (!require(randomForest)) {
+  install.packages("randomForest")
+  library(randomForest)
+}
+
+# Check and install dplyr if not already installed
+if (!require(randomForest)) {
+  install.packages("dplyr")
+  library(dplyr)
+}
+
+# Load in the libraries
 library(tidyverse)
 library(caret)
 library(randomForest)
+library(dplyr)
 ```
 
 ## Set the working directory
 
 Change the path below to the path that contains the selection table.
 
-```{r set working directory}
-setwd('/Users/blg85/Documents/Cornell/TS8') # Modify this to your path
+```{r set working directory, warning=FALSE}
+setwd('/Users/blg85/Documents/GitHub/Training-Session-8/TS8_Exercise_BG/Dataset/Selection_Tables') # Modify this to your path
+
 dir() # the dir() function enables us to see what is in the working directory. Check that the selection table .txt file is listed here. If it is not, revise your path. 
 
-```
+# Read Selection Table
 
-## Read Selection Table
-
-Here we will read the Raven selection table into the R environment using the read.table() function.
-
-```{r read selection table}
-owl.df <- read.table('Owl_Selection_Table.selections.txt',,header=T,sep='\t',check.names=FALSE)
+# Here we will read the Raven selection table into the R environment using the read.table() function.
+owl.df <- read.table('TS8_Owl_Selection_Table_Participant_Copy.selections.txt',header=T,sep='\t',check.names=FALSE)
 ```
 
 # Obtain basic information about the selection table
@@ -74,27 +98,51 @@ owl.df$Species <- factor(owl.df$Species)
 Let's get some basic information about our selections
 
 ```{r}
-boxplot(owl.df$`Dur 50% (s)`~owl.df$Species)
+colnames(owl.df) #See which columns are the acoustic measurements
 ```
 
-## Visualize differences in measurements between groups
+## Information about the measurements
+
+Let's get some basic information about our selections
+
+```{r}
+# Choose the column number for one of the bioacoustic measurements
+measurement_column <- 13  # Replace with the desired column number
+
+# Plot the selected measurement against species
+boxplot(owl.df[, measurement_column] ~ owl.df$Species,
+        ylab = colnames(owl.df[measurement_column]),
+        xlab = 'Species',
+        main = paste("Distribution of", colnames(owl.df[measurement_column]), "by Species"))
+```
+
+## Visualize differences in measurements between groups for all measurements
 
 ```{r}
 
-# List of columns to create density plots for
-columns_to_plot <- c("Avg Entropy (bits)", "BW 50% (Hz)", "BW 90% (Hz)", "Delta Time (s)", 
-                     "Dur 50% (s)", "Dur 90% (s)", "Freq 25% (Hz)", "Freq 5% (Hz)", 
-                     "Freq 75% (Hz)", "Freq 95% (Hz)", "Peak Freq (Hz)", 
-                     "PFC Avg Slope (Hz/ms)", "PFC Max Freq (Hz)", "PFC Max Slope (Hz/ms)",
-                     "PFC Min Freq (Hz)", "PFC Min Slope (Hz/ms)", "PFC Num Inf Pts")
+# Option 1
+# Specify the range of columns for the bioacoustic measurements
+start_col <- 11  # Replace with the index of the first measurement column
+end_col <- 27    # Replace with the index of the last measurement column
+
+# Option 2 List of columns to create density plots for
+# columns_to_plot <- c("Avg Entropy (bits)", "BW 50% (Hz)", "BW 90% (Hz)", "Delta Time (s)", 
+#                     "Dur 50% (s)", "Dur 90% (s)", "Freq 25% (Hz)", "Freq 5% (Hz)", 
+#                     "Freq 75% (Hz)", "Freq 95% (Hz)", "Peak Freq (Hz)", 
+#                     "PFC Avg Slope (Hz/ms)", "PFC Max Freq (Hz)", "PFC Max Slope (Hz/ms)",
+#                     "PFC Min Freq (Hz)", "PFC Min Slope (Hz/ms)", "PFC Num Inf Pts")
+
+
+# Extract the relevant columns
+measurement_columns <- colnames(owl.df)[start_col:end_col]
 
 # Convert the dataframe from wide format to long format
 # This allows us to have a single column for acoustic measurement values and another for measurement types
 owl.df_long <- owl.df %>%
   # Select only the columns of interest: Species, and the acoustic measurements
-  select(Species, all_of(columns_to_plot)) %>%
+  select(Species, all_of(measurement_columns)) %>%
   # Pivot the dataframe to long format
-  pivot_longer(cols = -c(Species), names_to = "Measurement", values_to = "Value")
+  pivot_longer(cols = -Species, names_to = "Measurement", values_to = "Value")
 
 # Create the multipanel density plot
 ggplot(owl.df_long, aes(x = Value, fill = Species)) +
@@ -109,16 +157,19 @@ ggplot(owl.df_long, aes(x = Value, fill = Species)) +
   # Apply a minimal theme for a clean look
   theme_minimal()
 
-
 ```
 
-Split the annotated dataset into training and testing datasets. Remember, it is important that any data used in the test set is *not* used in training.
+Click the ![](images/Screenshot%202024-07-25%20at%2012.35.00%20AM.png){width="37"}icon in the top right of the figure to open it in a new window.
+
+# Split annotated data into training and testing sets
+
+Remember, it is important that any data used in the test set is *not* used in training. In many cases, we would split the data into training and testing sets *before* beginning annotations.
 
 ```{r}
 
 # Create a stratified split
 set.seed(123)  # For reproducibility
-trainIndex <- createDataPartition(owl.df$Species, p = 0.7, list = FALSE) # Here, p refers to the percentage of the dataset that will be used for training. So, p = 0.7 means that 70% of the examples will be used to train the model and 30% will be used to test the model. 
+trainIndex <- createDataPartition(owl.df$Species, p = 0.8, list = FALSE) # Here, p refers to the percentage of the dataset that will be used for training. So, p = 0.7 means that 70% of the examples will be used to train the model and 30% will be used to test the model. 
 
 # Split the data into training and testing sets
 owl.df.train <- owl.df[trainIndex, ]
@@ -126,7 +177,7 @@ owl.df.test <- owl.df[-trainIndex, ]
 
 # Choose which acoustic measurements (features) you want to include to train your model
 colnames(owl.df)
-selected.features <- c(14,15) # replace with the column numbers of your choosing
+selected.features <- c(11:15) # replace with the column numbers of your choosing based on what features you want to include in your model
 
 # Check that predictor variables are numeric or logical
 predictor_columns <- selected.features # Specify the correct columns for predictors
@@ -188,6 +239,7 @@ results <- data.frame(
 ```{r}
 # Create a confusion matrix
 confusionMatrix <- confusionMatrix(results$Predicted, results$Actual)
+print(confusionMatrix)
 
 # Visualize the results
 # Create a confusion matrix plot
@@ -200,11 +252,3 @@ ggplot(confusion_matrix_plot, aes(x = Actual, y = Predicted)) +
   theme_minimal()
 
 ```
-
-# To add:
-
-# Explanation of confusion matrix
-
-# Calculate the proportion correct (precision) by adding up the number of correctly identified calls and dividing by the total number of calls.
-
-# Next steps: Change the features included in the model. What is the best performance you can achieve?
